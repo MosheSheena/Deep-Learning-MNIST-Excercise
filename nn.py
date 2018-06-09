@@ -1,9 +1,14 @@
 # Imports
 import tensorflow as tf
+from tensorflow.examples.tutorials.mnist import input_data
+from helper import timeit, clean_dir
 
 # General vars for modularity
 image_pixels = 28 ** 2
 num_classes = 10
+logistic_tensorboard_log_path = \
+    "/Users/moshesheena/git/Deep-Learning-MNIST-Excercise/logs/logistic/"
+mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
 
 
 def inference(
@@ -44,7 +49,8 @@ def loss(output, y):
     return loss_val
 
 
-def training(loss, global_step, learning_rate=None, logging=False):
+@timeit
+def training(loss, global_step, learning_rate=0.5, logging=True):
     """
     train the model by computing the gradients and modifying the model params
     :param loss: (tensor) the value given from the loss function
@@ -61,18 +67,26 @@ def training(loss, global_step, learning_rate=None, logging=False):
 
 def evaluate(output, y):
     """
-    evaluating the model on the validation / test-set
+    evaluating the models accuracy
     :param output:
     :param y:
     :return:
     """
-    correct_prediction = tf.equal(tf.arg_max(output, 1), tf.argmax(y, 1))
+    correct_prediction = tf.equal(tf.argmax(output, 1), tf.argmax(y, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+    tf.summary.scalar("accuracy", accuracy)
 
     return accuracy
 
 
-def logistic():
+@timeit
+def logistic(
+        log_files_path, training_epochs, total_batch,
+        learning_rate, batch_size=50, display_step=1
+):
+
+    clean_dir(logistic_tensorboard_log_path)
 
     with tf.Graph().as_default():
 
@@ -82,21 +96,63 @@ def logistic():
 
         output = inference(x)
         cost = loss(output=output, y=y)
-        global_step = tf.Variable(0, name='global step', trainable=False)
+        global_step = tf.Variable(0, name='global_step', trainable=False)
 
-        train_op = training(cost, global_step=global_step)
+        train_op = training(cost, global_step=global_step,
+                            learning_rate=learning_rate)
         eval_op = evaluate(output=output, y=y)
         summary_op = tf.summary.merge_all()
         saver = tf.train.Saver()
 
         sess = tf.Session()
-        summary_writer = tf.summary.FileWriter\
-            (
-                "/Users/moshesheena/git/Deep-Learning-MNIST-Excercise/logs",
-                graph_def=sess.graph_def
+        summary_writer = tf.summary.FileWriter(
+                log_files_path, graph_def=sess.graph_def
             )
         init_op = tf.initialize_all_variables()
 
         sess.run(init_op)
 
-        
+        # training cycle
+        for epoch in range(training_epochs):
+            avg_cost = 0
+
+            # loop over all batches
+            for i in range(total_batch):
+                mbatch_x, mbatch_y = mnist.train.next_batch(batch_size)
+                # Fit training using batch data
+                feed_dict = {x: mbatch_x, y: mbatch_y}
+                sess.run(train_op, feed_dict=feed_dict)
+                # Compute average loss
+                minibatch_cost = sess.run(cost, feed_dict=feed_dict)
+                avg_cost += minibatch_cost/total_batch
+                accuracy = sess.run(eval_op, feed_dict=feed_dict)
+
+                print("Test{} Error:{}".format(i, accuracy))
+
+        # Display logs per epoch step
+        # if epoch % display_step == 0:
+        val_feed_dict = {
+            x: mnist.validation.images,
+            y: mnist.validation.labels
+        }
+        accuracy = sess.run(eval_op, feed_dict=val_feed_dict)
+
+        print("Validation Error:", 1-accuracy)
+
+        summary_str = sess.run(summary_op, feed_dict=feed_dict)
+
+        summary_writer.add_summary(
+            summary_str, sess.run(global_step)
+        )
+        saver.save(sess, log_files_path, global_step=global_step)
+
+        print("Optimization Finished!")
+
+        test_feed_dict = {
+            x: mnist.test.images,
+            y: mnist.test.labels
+        }
+
+        accuracy = sess.run(eval_op, feed_dict=test_feed_dict)
+
+        print("Test Accuracy:", accuracy)
