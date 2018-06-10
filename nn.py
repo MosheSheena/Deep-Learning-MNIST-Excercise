@@ -50,7 +50,7 @@ def loss(output, y):
 
 
 @timeit
-def training(loss, global_step, learning_rate=0.5, logging=True):
+def training(loss, global_step, learning_rate=0.5, logging=False):
     """
     train the model by computing the gradients and modifying the model params
     :param loss: (tensor) the value given from the loss function
@@ -59,6 +59,7 @@ def training(loss, global_step, learning_rate=0.5, logging=True):
     """
     if logging:
         tf.summary.scalar("loss", loss)
+
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = optimizer.minimize(loss, global_step=global_step)
 
@@ -75,41 +76,47 @@ def evaluate(output, y):
     correct_prediction = tf.equal(tf.argmax(output, 1), tf.argmax(y, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
-    tf.summary.scalar("accuracy", accuracy)
-
     return accuracy
 
 
 @timeit
 def logistic(
-        log_files_path, training_epochs, total_batch,
-        learning_rate, batch_size=50, display_step=1
+        training_epochs, total_batch,
+        learning_rate, batch_size=50, display_step=1,
+        enable_tensorboard=False, log_files_path=None
 ):
 
     clean_dir(logistic_tensorboard_log_path)
 
     with tf.Graph().as_default():
 
+        # Tensor of MNIST data images
         x = tf.placeholder("float", [None, image_pixels])
 
+        # 0-9 digits => 10 classes
         y = tf.placeholder("float", [None, num_classes])
 
         output = inference(x)
         cost = loss(output=output, y=y)
+
+        # For keeping batch number
         global_step = tf.Variable(0, name='global_step', trainable=False)
 
         train_op = training(cost, global_step=global_step,
                             learning_rate=learning_rate)
+
         eval_op = evaluate(output=output, y=y)
-        summary_op = tf.summary.merge_all()
-        saver = tf.train.Saver()
 
         sess = tf.Session()
-        summary_writer = tf.summary.FileWriter(
-                log_files_path, graph_def=sess.graph_def
-            )
-        init_op = tf.initialize_all_variables()
 
+        if enable_tensorboard:
+            summary_op = tf.summary.merge_all()
+            saver = tf.train.Saver()
+            summary_writer = tf.summary.FileWriter(
+                    log_files_path, graph_def=sess.graph_def
+            )
+
+        init_op = tf.initialize_all_variables()
         sess.run(init_op)
 
         # training cycle
@@ -125,12 +132,8 @@ def logistic(
                 # Compute average loss
                 minibatch_cost = sess.run(cost, feed_dict=feed_dict)
                 avg_cost += minibatch_cost/total_batch
-                accuracy = sess.run(eval_op, feed_dict=feed_dict)
 
-                print("Test{} Error:{}".format(i, accuracy))
 
-        # Display logs per epoch step
-        # if epoch % display_step == 0:
         val_feed_dict = {
             x: mnist.validation.images,
             y: mnist.validation.labels
@@ -139,12 +142,13 @@ def logistic(
 
         print("Validation Error:", 1-accuracy)
 
-        summary_str = sess.run(summary_op, feed_dict=feed_dict)
+        if enable_tensorboard:
+            summary_str = sess.run(summary_op, feed_dict=feed_dict)
 
-        summary_writer.add_summary(
-            summary_str, sess.run(global_step)
-        )
-        saver.save(sess, log_files_path, global_step=global_step)
+            summary_writer.add_summary(
+                summary_str, sess.run(global_step)
+            )
+            saver.save(sess, log_files_path, global_step=global_step)
 
         print("Optimization Finished!")
 
@@ -156,3 +160,7 @@ def logistic(
         accuracy = sess.run(eval_op, feed_dict=test_feed_dict)
 
         print("Test Accuracy:", accuracy)
+
+
+def execute_architecture(architecture, architecture_name, hyperparams):
+    
