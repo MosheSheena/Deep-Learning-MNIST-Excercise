@@ -1,10 +1,16 @@
 <component name="ProjectDictionaryState">
   <dictionary name="moshesheena">
     <words>
+      <w>conv</w>
+      <w>convolutional</w>
+      <w>entorpy</w>
       <w>excercise</w>
       <w>hyperparams</w>
+      <w>minibatch</w>
       <w>mnist</w>
       <w>moshesheena</w>
+      <w>pred</w>
+      <w>relu</w>
       <w>tensorboard</w>
     </words>
   </dictionary>

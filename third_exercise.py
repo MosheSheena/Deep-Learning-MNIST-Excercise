@@ -5,18 +5,18 @@ Authors:
 """
 
 # Imports
+from sklearn.metrics import confusion_matrix
+from math import ceil, sqrt
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+import numpy as np
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
 import datetime
 from timeit import default_timer as timer
 import os
 import shutil
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
-import numpy as np
-from sklearn.metrics import confusion_matrix
-from math import ceil, sqrt
 
 # General vars for modularity
 image_shape = 28 ** 2
@@ -28,13 +28,6 @@ mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
 def clean_dir(dir_path):
     if os.path.exists(dir_path):
         shutil.rmtree(dir_path, ignore_errors=True)
-
-
-def write_run_results_2file(file_path, exp_name, results_dict):
-    with open(file=file_path, mode='a+') as f:
-        f.write('{}:\n'.format(exp_name))
-        for metric, value in results_dict.items():
-            f.write('{0: 2d}: {1: 6d}\n'.format(metric, value))
 
 
 def plot_image(image, img_shape, file_name):
@@ -56,13 +49,13 @@ def logistic_regression(x, y, hyper_params):
     with tf.name_scope('logistic_layer'):
         z = tf.matmul(x, W) + b
 
-    x_entorpy = tf.reduce_mean(
+    x_entropy = tf.reduce_mean(
         tf.nn.softmax_cross_entropy_with_logits_v2(labels=y, logits=z)
     )
 
     training_step = tf.train.AdamOptimizer(
         learning_rate=hyper_params['learning_rate']
-    ).minimize(x_entorpy)
+    ).minimize(x_entropy)
 
     prediction = tf.argmax(input=z, dimension=1)
     true_label = tf.argmax(input=y, dimension=1)
@@ -74,7 +67,54 @@ def logistic_regression(x, y, hyper_params):
 
 
 def feed_forward_2_hidden_relu(x, y, hyper_params):
-    pass
+    num_hidden_neurons = hyper_params['num_hidden']
+
+    W1 = tf.get_variable(
+        "W1", shape=[image_shape, num_hidden_neurons],
+        initializer=hyper_params['w_initializer']
+    )
+    b1 = tf.get_variable(
+        "b1", shape=[num_hidden_neurons],
+        initializer=hyper_params['bias_initializer']
+    )
+    W2 = tf.get_variable(
+        "W2", shape=[num_hidden_neurons, num_hidden_neurons],
+        initializer=hyper_params['w_initializer']
+    )
+    b2 = tf.get_variable(
+        "b2", shape=[num_hidden_neurons],
+        initializer=hyper_params['bias_initializer']
+    )
+    W3 = tf.get_variable(
+        "W3", shape=[num_hidden_neurons, num_classes],
+        initializer=hyper_params['w_initializer']
+    )
+    b3 = tf.get_variable(
+        "b3", shape=[num_classes], initializer=hyper_params['bias_initializer']
+    )
+
+    z1 = tf.matmul(x, W1) + b1
+    layer_1_logit = tf.nn.relu(z1)
+    z2 = tf.matmul(layer_1_logit, W2) + b2
+    layer_2_logit = tf.nn.relu(z2)
+    z3 = tf.matmul(layer_2_logit, W3) + b3
+    layer_3_logit = tf.nn.relu(z3)
+
+    x_entropy = tf.reduce_mean(
+        tf.nn.softmax_cross_entropy_with_logits_v2(labels=y, logits=z3)
+    )
+
+    training_step = tf.train.AdamOptimizer(
+        learning_rate=hyper_params['learning_rate']
+    ).minimize(x_entropy)
+
+    prediction = tf.argmax(input=z3, dimension=1)
+    true_label = tf.argmax(input=y, dimension=1)
+    correct_pred = tf.equal(x=prediction, y=true_label)
+
+    accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+
+    return training_step, prediction, accuracy
 
 
 def convolutional(x, y, hyper_params):
@@ -105,14 +145,19 @@ def evaluate_architecture(x, y, accuracy, sess, against="test"):
     return sess.run(accuracy, feed_dict)
 
 
-def plot_confusion_matrix(cls_pred, cls_true, file_name):
-    '''
-    plots the confusion matrix and calc it's metrics
-    @param cls_pred : Tensor with the predicted classes
-    @param cls_true : Tensor with the tru classes from the dataset
-    @param file_name : the name of the file we will plot the confusion mat
-    '''
-
+def plot_confusion_matrix(cls_pred, cls_true, architecture_name, file_name):
+    """
+    plot the confusion matrix and write the metrics:
+    1. precision
+    2. recall
+    3. F_measure
+    to the results file
+    :param cls_pred:
+    :param cls_true:
+    :param architecture_name:
+    :param file_name:
+    :return:
+    """
     # Get the confusion matrix using sklearn.
     cm = confusion_matrix(y_true=cls_true,
                           y_pred=cls_pred)
@@ -131,7 +176,7 @@ def plot_confusion_matrix(cls_pred, cls_true, file_name):
     recall = np.average(TP / (TP + FN))
     f_measure = 2 * (precision * recall) / (precision + recall)
 
-    with open('results.txt', 'a+') as res:
+    with open('metrics_{}.txt'.format(architecture_name), 'a+') as res:
         res.write('confusion matrix:\n{}\n'.format(cm))
         res.write('precision: {}\n'.format(precision))
         res.write('recall: {}\n'.format(recall))
@@ -240,7 +285,9 @@ def architecture_2_model(
             x: mnist.test.images, y: mnist.test.labels
         }
     )
-    plot_confusion_matrix(c1, c2, 'confusion_mat_{}'.format(architecture_name))
+    plot_confusion_matrix(
+        c1, c2, architecture_name, 'confusion_mat_{}'.format(architecture_name)
+    )
 
     num_weights = np.sum(
         [
@@ -268,7 +315,22 @@ def execute_excercise():
         architecture=logistic_regression,
         architecture_name='Logistic Regression',
         hyper_params=hyper_params,
-        res_file_path="/Users/moshesheena/Desktop/nn_res_file.txt"
+        res_file_path="nn_res_file.txt"
+    )
+
+    hyper_params = {
+        'w_initializer': tf.random_normal_initializer,
+        'bias_initializer': tf.constant_initializer(value=0),
+        'learning_rate': 0.01,
+        'num_batches': 1200,
+        'minibatch_size': 50,
+        'num_hidden': 200
+    }
+    architecture_2_model(
+        architecture=feed_forward_2_hidden_relu,
+        architecture_name='Feed Forward 2 relu hidden layers',
+        hyper_params=hyper_params,
+        res_file_path="nn_res_file.txt"
     )
 
 
